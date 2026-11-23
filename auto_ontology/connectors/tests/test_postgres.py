@@ -328,3 +328,49 @@ def test_read_only_reads_and_does_not_leak_onto_the_pool(
     rows = pagila.execute("SELECT count(*) AS n FROM actor", read_only=True)
     assert int(rows.n.iloc[0]) > 0
     assert pagila.execute("SHOW transaction_read_only").iloc[0, 0] == "off"
+
+
+# ----------------------------------------------------------------------------
+# COMMENT ON reaches the catalog as the table / column description.
+# ----------------------------------------------------------------------------
+
+_COMMENTED_DDL = """
+CREATE TABLE public.readings (sensor int, reading real);
+COMMENT ON TABLE public.readings IS 'One sensor reading per row.';
+COMMENT ON COLUMN public.readings.reading IS 'Value in degrees Celsius.';
+"""
+
+
+@pytest.fixture(scope="module")
+def commented_db() -> Iterator[str]:
+    """A scratch database with one commented table and one commented column."""
+    if not os.environ.get("POSTGRES_USER"):
+        pytest.skip("POSTGRES_* not set")
+    name = f"commented_{uuid.uuid4().hex[:8]}"
+    maintenance = os.environ.get("POSTGRES_DATABASE", "postgres")
+    try:
+        admin = psycopg.connect(_admin_dsn(maintenance), autocommit=True)
+    except Exception as exc:  # noqa: BLE001 — any failure means "no fixture DB"
+        pytest.skip(f"postgres not reachable: {exc}")
+    with admin:
+        try:
+            admin.execute(f'CREATE DATABASE "{name}"')
+            with psycopg.connect(_admin_dsn(name), autocommit=True) as scratch:
+                scratch.execute(_COMMENTED_DDL)
+            yield name
+        finally:
+            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+def test_comments_are_reported_as_descriptions(commented_db: str) -> None:
+    """``COMMENT ON`` text comes back in ``description``; no comment is NULL,
+    so the semantic pass still describes the uncommented column itself."""
+    connector = create_connector(_admin_dsn(commented_db))
+    try:
+        tables = connector.get_tables().set_index("table_name")
+        columns = connector.get_columns().set_index("column_name")
+    finally:
+        connector.close()
+    assert tables.loc["readings", "description"] == "One sensor reading per row."
+    assert columns.loc["reading", "description"] == "Value in degrees Celsius."
+    assert columns.loc["sensor", "description"] is None

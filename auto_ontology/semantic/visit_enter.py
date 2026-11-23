@@ -454,6 +454,9 @@ def probe_ascending_distinct_values(
     _sampling_breaker.record_success(connector)
     if df is None:
         return None
+    if df.empty or df.shape[1] == 0:
+        # Empty table: the capped executor returns a frame without columns.
+        return []
     return [_json_ready_sample(v) for v in df.iloc[:, 0].tolist()]
 
 

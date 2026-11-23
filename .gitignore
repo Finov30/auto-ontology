@@ -94,3 +94,11 @@ helm.sh
 /temp.txt
 /vectors_wiki.py
 /vectors_wiki_load.py
+
+# Secrets: every env file (any directory) except the documented template
+**/.env
+**/.env.*
+!.env.example
+
+# Local client data (domain summaries) - never publish
+.semantic_summaries/

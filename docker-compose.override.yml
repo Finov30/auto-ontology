@@ -1,0 +1,34 @@
+# Local : le port 3001 de l'hôte est pris par open-seo, l'API est publiée sur 3011.
+services:
+  auto-ontology:
+    ports: !override
+      - "127.0.0.1:3011:3001"
+    # Step E (eval-triades): domain summary read by auto_ontology/semantic/domain.py (relative path /app/.semantic_summaries)
+    volumes:
+      - ./.semantic_summaries:/app/.semantic_summaries:ro
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"
+  pgadmin:
+    ports: !override
+      - "127.0.0.1:5050:80"
+  ingestion-service:
+    ports: !override
+      - "127.0.0.1:3002:3002"
+    # Step E (eval-triades): the semantic compilation runs here and loads the domain summary
+    volumes:
+      - ./.semantic_summaries:/app/.semantic_summaries:ro
+  auto-ontology-frontend:
+    ports: !override
+      - "127.0.0.1:3000:3000"
+
+  # Proxy local vers Azure OpenAI (jungle-as-code) : voir local-azure-proxy/proxy.py
+  azure-proxy:
+    image: python:3.12-slim
+    container_name: auto-ontology-azure-proxy
+    restart: unless-stopped
+    command: ["python", "-u", "/app/proxy.py"]
+    env_file:
+      - local-azure-proxy/.env
+    volumes:
+      - ./local-azure-proxy/proxy.py:/app/proxy.py:ro

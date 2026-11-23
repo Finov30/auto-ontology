@@ -156,6 +156,9 @@ class PostgresDatabase(SQLDatabase):
         same rows twice under names no one writes queries against. The parent
         ``p`` must be kept for exactly that reason — excluding both, as this did
         before, made partitioned tables invisible.
+
+        ``description`` is the relation's ``COMMENT ON`` text (NULL when none),
+        the column ``normalize_tables`` types as the table description.
         """
         view_type = TableTypes.VIEW
         materialized_view_type = TableTypes.MATERIALIZED_VIEW
@@ -168,7 +171,8 @@ class PostgresDatabase(SQLDatabase):
                     WHEN 'v' THEN '{view_type}'
                     WHEN 'm' THEN '{materialized_view_type}'
                     ELSE '{base_table_type}'
-                END AS table_type
+                END AS table_type,
+                obj_description(c.oid, 'pg_class') AS description
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
@@ -207,6 +211,11 @@ class PostgresDatabase(SQLDatabase):
         applied for free: without it, a role with rights on one schema still
         catalogues, embeds and offers every table it cannot read, and every
         generated query against them dies with ``permission denied``.
+
+        ``description`` is the column's ``COMMENT ON`` text (NULL when none).
+        The semantic pass only asks the LLM to describe columns whose
+        description is blank (``lacks_description``), so a commented column
+        keeps its owner's wording.
         """
         return self.execute("""
             SELECT
@@ -217,7 +226,8 @@ class PostgresDatabase(SQLDatabase):
                 NOT a.attnotnull                 AS is_nullable,
                 row_number() OVER (
                     PARTITION BY c.oid ORDER BY a.attnum
-                )                                AS ordinal_position
+                )                                AS ordinal_position,
+                col_description(c.oid, a.attnum) AS description
             FROM pg_attribute a
             JOIN pg_class c ON c.oid = a.attrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
